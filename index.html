@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>羽球戰績本 | Badminton Tracker</title>
+    
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 引入 Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    
+    <!-- 引入 FontAwesome (Icon) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- 引入穩定的 MQTT.js CDN -->
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+    <!-- Tailwind 設定 (日系配色) -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f4f7f5',
+                            100: '#e5ede8',
+                            500: '#7a9e8b',
+                            600: '#5e7d6d',
+                        },
+                        paper: '#fcfcfc'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #f0f4f2;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .glass-nav {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(10px);
+            border-top: 1px solid rgba(0,0,0,0.05);
+        }
+        
+        /* 隱藏數字輸入框的預設上下箭頭 */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+            -webkit-appearance: none; 
+            margin: 0; 
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+    </style>
+</head>
+<body class="text-gray-700 antialiased h-screen flex justify-center pb-16">
+
+<div id="app" class="w-full max-w-md bg-[#f0f4f2] min-h-screen relative shadow-2xl overflow-hidden flex flex-col">
+    
+    <!-- 頂部導航 -->
+    <header class="bg-paper px-6 pt-10 pb-4 shadow-sm z-10 flex justify-between items-center rounded-b-3xl">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-800 tracking-wider">羽球戰績本</h1>
+            <p class="text-xs mt-1 flex items-center transition-colors" :class="connectionColor">
+                <i class="fa-solid mr-1" :class="connectionIcon"></i>
+                狀態: {{ syncStatus }} 
+                <span v-if="roomCode" class="ml-2 bg-brand-100 text-brand-600 px-2 py-0.5 rounded-full font-mono text-[10px]">
+                    房: {{ roomCode }}
+                </span>
+            </p>
+        </div>
+        <div class="h-10 w-10 bg-brand-50 rounded-full flex items-center justify-center text-brand-500 relative">
+            <i class="fa-solid fa-shuttlecock text-xl"></i>
+            <span v-if="isSyncing" class="absolute top-0 right-0 h-3 w-3 bg-green-400 rounded-full animate-ping"></span>
+        </div>
+    </header>
+
+    <!-- 主要內容區 -->
+    <main class="flex-1 overflow-y-auto no-scrollbar p-5 space-y-6">
+        
+        <!-- ================= [分頁 1] 首頁 / 戰力榜 ================= -->
+        <div v-show="currentTab === 'home'" class="animate-fade-in pb-16">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-bold text-gray-700">勝率排行榜</h2>
+                <div class="flex space-x-2">
+                    <button @click="showManagePlayers = true" class="text-sm text-gray-500 font-medium bg-gray-200 px-3 py-1.5 rounded-full active:bg-gray-300 transition-colors">
+                        <i class="fa-solid fa-gear"></i> 管理
+                    </button>
+                    <button @click="showAddPlayer = true" class="text-sm text-brand-500 font-medium bg-brand-50 px-3 py-1.5 rounded-full active:bg-brand-100 transition-colors">
+                        <i class="fa-solid fa-user-plus mr-1"></i>球友
+                    </button>
+                </div>
+            </div>
+
+            <!-- 排行榜切換標籤 -->
+            <div class="flex bg-gray-200 rounded-xl p-1 mb-5">
+                <button @click="leaderboardType = 'all'" class="flex-1 py-1.5 text-sm font-medium rounded-lg transition-all" :class="leaderboardType === 'all' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'">總覽</button>
+                <button @click="leaderboardType = 'singles'" class="flex-1 py-1.5 text-sm font-medium rounded-lg transition-all" :class="leaderboardType === 'singles' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'">單打</button>
+                <button @click="leaderboardType = 'doubles'" class="flex-1 py-1.5 text-sm font-medium rounded-lg transition-all" :class="leaderboardType === 'doubles' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'">雙打組合</button>
+            </div>
+            
+            <div v-if="filteredStats.length === 0" class="bg-paper rounded-3xl p-8 text-center shadow-sm">
+                <div class="text-gray-300 mb-3"><i class="fa-solid fa-medal text-4xl"></i></div>
+                <p class="text-gray-400 text-sm">此分類尚未有對戰紀錄</p>
+            </div>
+
+            <div class="space-y-3">
+                <div v-for="(stat, index) in filteredStats" :key="stat.id" 
+                     class="bg-paper rounded-2xl p-4 shadow-sm flex items-center justify-between transition-transform active:scale-95">
+                    <div class="flex items-center flex-1 overflow-hidden">
+                        <div class="w-6 text-center font-bold mr-3 shrink-0" :class="index === 0 ? 'text-yellow-500 text-lg' : (index === 1 ? 'text-gray-400 text-base' : (index === 2 ? 'text-amber-600 text-base' : 'text-gray-300 text-sm'))">
+                            <span v-if="index > 2">{{ index + 1 }}</span>
+                            <i v-else class="fa-solid fa-medal"></i>
+                        </div>
+                        <div class="h-10 w-10 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center font-bold mr-3 shrink-0 shadow-sm border border-brand-200 text-lg">
+                            {{ stat.isCombo ? '👥' : (stat.name ? stat.name.charAt(0) : '?') }}
+                        </div>
+                        <div class="truncate pr-2">
+                            <div class="font-bold text-gray-800 text-sm truncate">{{ stat.name }}</div>
+                            <div class="text-[10px] text-gray-400 mt-0.5">{{ stat.wins }}勝 {{ stat.losses }}敗 (共{{ stat.matches }}場)</div>
+                        </div>
+                    </div>
+                    <div class="text-right shrink-0 ml-2">
+                        <p class="text-lg font-bold text-brand-600">{{ stat.winRate }}%</p>
+                        <p class="text-[10px] text-gray-400">勝率</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= [分頁 2] 對局紀錄 (依日期分組) ================= -->
+        <div v-show="currentTab === 'matches'" class="animate-fade-in relative pb-16">
+            <h2 class="text-lg font-bold text-gray-700 mb-4">歷史對局</h2>
+            
+            <div v-if="matches.length === 0" class="bg-paper rounded-3xl p-8 text-center shadow-sm">
+                <div class="text-gray-300 mb-3"><i class="fa-solid fa-clipboard-list text-4xl"></i></div>
+                <p class="text-gray-400 text-sm">尚未有對戰紀錄<br>準備開始第一場比賽！</p>
+            </div>
+
+            <div class="space-y-6">
+                <div v-for="group in groupedMatches" :key="group.date">
+                    <div class="flex items-center mb-3">
+                        <div class="bg-gray-200 h-[1px] flex-1"></div>
+                        <span class="px-3 text-xs font-bold text-gray-400 flex items-center">
+                            <i class="fa-regular fa-calendar mr-1"></i> {{ group.date }}
+                        </span>
+                        <div class="bg-gray-200 h-[1px] flex-1"></div>
+                    </div>
+                    
+                    <div class="space-y-3">
+                        <div v-for="match in group.matches" :key="match.id" class="bg-paper rounded-2xl p-4 shadow-sm relative overflow-hidden">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-[10px] font-bold px-2 py-0.5 rounded-md" :class="((match.teamA || []).length===1 && (match.teamB || []).length===1) ? 'bg-blue-50 text-blue-500' : 'bg-purple-50 text-purple-500'">
+                                    {{ ((match.teamA || []).length===1 && (match.teamB || []).length===1) ? '單打' : '雙打' }}
+                                </span>
+                                <span class="text-[10px] text-gray-400"><i class="fa-regular fa-clock mr-1"></i>{{ formatTime(match.timestamp) }}</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <div class="flex-1 text-center" :class="Number(match.scoreA) > Number(match.scoreB) ? 'text-brand-600 font-bold' : 'text-gray-500'">
+                                    <p class="text-sm truncate">{{ getPlayerName((match.teamA || [])[0]) }}</p>
+                                    <p class="text-sm truncate" v-if="(match.teamA || [])[1]">{{ getPlayerName((match.teamA || [])[1]) }}</p>
+                                </div>
+                                <div class="px-3 flex items-center justify-center space-x-2">
+                                    <span class="text-2xl font-bold" :class="Number(match.scoreA) > Number(match.scoreB) ? 'text-gray-800' : 'text-gray-400'">{{ match.scoreA }}</span>
+                                    <span class="text-gray-300 text-xs mt-1">vs</span>
+                                    <span class="text-2xl font-bold" :class="Number(match.scoreB) > Number(match.scoreA) ? 'text-gray-800' : 'text-gray-400'">{{ match.scoreB }}</span>
+                                </div>
+                                <div class="flex-1 text-center" :class="Number(match.scoreB) > Number(match.scoreA) ? 'text-brand-600 font-bold' : 'text-gray-500'">
+                                    <p class="text-sm truncate">{{ getPlayerName((match.teamB || [])[0]) }}</p>
+                                    <p class="text-sm truncate" v-if="(match.teamB || [])[1]">{{ getPlayerName((match.teamB || [])[1]) }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 懸浮新增對局按鈕 -->
+            <button @click="showAddMatch = true" class="fixed bottom-20 right-6 h-14 w-14 bg-brand-500 text-white rounded-full shadow-lg shadow-brand-500/40 flex items-center justify-center text-2xl active:scale-95 transition-transform z-20">
+                <i class="fa-solid fa-plus"></i>
+            </button>
+        </div>
+
+        <!-- ================= [分頁 3] 同步中心 ================= -->
+        <div v-show="currentTab === 'sync'" class="animate-fade-in pb-16">
+            <h2 class="text-lg font-bold text-gray-700 mb-4">即時房間同步 (免註冊)</h2>
+            
+            <div class="bg-paper rounded-2xl p-5 shadow-sm mb-6">
+                <div class="flex justify-between items-end mb-2">
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider">輸入房間號碼以連線</label>
+                    <button @click="generateRoomCode" class="text-xs text-brand-500 active:scale-95 transition-transform font-bold"><i class="fa-solid fa-dice mr-1"></i>隨機產生</button>
+                </div>
+                <div class="flex space-x-2">
+                    <input v-model="roomCodeInput" type="text" placeholder="例: BADM77" class="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-4 py-2 outline-none focus:border-brand-500 font-mono uppercase text-gray-700">
+                    <button @click="joinRoom" class="bg-gray-800 text-white px-5 rounded-xl text-sm font-medium active:scale-95 transition-transform">
+                        連線頻道
+                    </button>
+                </div>
+                <p class="text-[11px] text-gray-400 mt-2 leading-relaxed">
+                    只要雙方輸入相同房號，透過公共頻道連線，一方新增對局，另一方即時秒更新！
+                </p>
+            </div>
+
+            <div class="space-y-3" :class="{'opacity-50 pointer-events-none': !roomCode}">
+                <button @click="requestSync" class="w-full bg-brand-500 text-white rounded-2xl p-4 text-left relative overflow-hidden shadow-sm shadow-brand-500/20 active:scale-95 transition-transform">
+                    <div class="relative z-10 flex items-center justify-between">
+                        <div>
+                            <h3 class="font-bold text-lg flex items-center"><i class="fa-solid fa-satellite-dish mr-2"></i>向房內球友要求資料</h3>
+                            <p class="text-brand-100 text-xs mt-1">剛加入房間時，點擊索取最新戰績並自動合併</p>
+                        </div>
+                    </div>
+                </button>
+                <div class="flex space-x-3 mt-3">
+                    <button @click="broadcastData(false)" class="flex-1 bg-paper rounded-2xl p-4 text-left border border-gray-100 shadow-sm active:bg-gray-50 transition-colors">
+                        <i class="fa-solid fa-tower-broadcast text-blue-500 mb-2 text-xl"></i>
+                        <h3 class="font-bold text-sm text-gray-700">主動發送資料</h3>
+                        <p class="text-[10px] text-gray-400 mt-1">將我目前的手機資料發送給所有人</p>
+                    </button>
+                </div>
+                <div class="bg-paper rounded-2xl p-4 mt-6 shadow-sm flex items-center justify-between border border-gray-100">
+                    <div>
+                        <h3 class="font-bold text-gray-700 text-sm">即時動態廣播</h3>
+                        <p class="text-xs text-gray-400">新增球友或對戰時，自動發送給其他人</p>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" v-model="autoSync" @change="saveSettings" class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-500"></div>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 底部導航欄 -->
+    <nav class="absolute bottom-0 w-full glass-nav px-6 py-3 flex justify-around items-center z-10 pb-5 rounded-t-3xl border-t border-gray-100">
+        <button @click="currentTab = 'home'" class="flex flex-col items-center p-2 transition-colors" :class="currentTab === 'home' ? 'text-brand-600' : 'text-gray-400 hover:text-gray-600'">
+            <i class="fa-solid fa-trophy text-xl mb-1"></i>
+            <span class="text-[10px] font-medium">戰力榜</span>
+        </button>
+        <button @click="currentTab = 'matches'" class="flex flex-col items-center p-2 transition-colors" :class="currentTab === 'matches' ? 'text-brand-600' : 'text-gray-400 hover:text-gray-600'">
+            <i class="fa-solid fa-clipboard-list text-xl mb-1"></i>
+            <span class="text-[10px] font-medium">紀錄</span>
+        </button>
+        <button @click="currentTab = 'sync'" class="flex flex-col items-center p-2 transition-colors relative" :class="currentTab === 'sync' ? 'text-brand-600' : 'text-gray-400 hover:text-gray-600'">
+            <i class="fa-solid fa-satellite-dish text-xl mb-1"></i>
+            <span class="text-[10px] font-medium">通訊室</span>
+            <span v-if="roomCode" class="absolute top-2 right-2 h-2 w-2 bg-green-500 rounded-full shadow-[0_0_5px_#22c55e]"></span>
+        </button>
+    </nav>
+
+    <!-- ================= 彈跳視窗 ================= -->
+    <!-- 管理球友彈窗 -->
+    <div v-if="showManagePlayers" class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm z-50 flex justify-center items-end sm:items-center pb-0 sm:pb-0 overflow-hidden">
+        <div class="bg-paper w-full h-[70vh] sm:h-auto sm:max-h-[80vh] sm:w-[90%] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col animate-slide-up">
+            <div class="p-4 border-b border-gray-100 flex justify-between items-center bg-white rounded-t-3xl sm:rounded-t-3xl">
+                <h3 class="text-lg font-bold text-gray-800">管理球友</h3>
+                <button @click="showManagePlayers = false; confirmDeleteId = null" class="text-gray-400 hover:text-gray-600 p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-5 space-y-3 bg-gray-50">
+                <div v-if="players.length === 0" class="text-center text-gray-400 text-sm mt-5">尚未新增任何球友</div>
+                <div v-for="p in players" :key="p.id" class="flex justify-between items-center bg-white p-3 rounded-xl shadow-sm border border-gray-100">
+                    <div class="flex-1 mr-3 flex items-center">
+                        <div class="h-8 w-8 rounded-full bg-brand-50 text-brand-600 flex items-center justify-center font-bold mr-3">{{ p.name.charAt(0) }}</div>
+                        <input v-model="p.name" @change="updatePlayerName" placeholder="球員名稱" class="w-full bg-transparent border-b border-dashed border-gray-300 focus:border-brand-500 outline-none text-gray-700 py-1" />
+                    </div>
+                    <button v-if="confirmDeleteId !== p.id" @click="confirmDeleteId = p.id" class="text-red-400 h-8 w-8 rounded-full hover:bg-red-50 flex items-center justify-center active:scale-95 transition-all">
+                        <i class="fa-solid fa-trash-can text-sm"></i>
+                    </button>
+                    <div v-else class="flex space-x-2">
+                        <button @click="deletePlayer(p.id)" class="bg-red-500 text-white text-xs px-3 py-2 rounded-lg font-bold shadow-sm active:scale-95 transition-transform">確認刪除</button>
+                        <button @click="confirmDeleteId = null" class="bg-gray-200 text-gray-700 text-xs px-3 py-2 rounded-lg font-bold shadow-sm active:scale-95 transition-transform">取消</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新增球友彈窗 -->
+    <div v-if="showAddPlayer" class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm z-50 flex justify-center items-end sm:items-center pb-0 sm:pb-0">
+        <div class="bg-paper w-full sm:w-[90%] rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl transform transition-transform animate-slide-up">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-lg font-bold text-gray-800">新增球友</h3>
+                <button @click="showAddPlayer = false" class="text-gray-400 hover:text-gray-600 p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <input v-model="newPlayerName" type="text" placeholder="輸入球員暱稱..." class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-6 outline-none focus:border-brand-500 text-gray-700">
+            <button @click="addPlayer" class="w-full bg-gray-800 text-white rounded-xl py-3 font-bold active:scale-95 transition-transform shadow-md">
+                儲存新增
+            </button>
+        </div>
+    </div>
+
+    <!-- 新增對局彈窗 -->
+    <div v-if="showAddMatch" class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm z-50 flex justify-center items-end sm:items-center pb-0 sm:pb-0 overflow-hidden">
+        <div class="bg-paper w-full h-[85vh] sm:h-auto sm:max-h-[90vh] sm:w-[90%] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col animate-slide-up">
+            <div class="p-4 border-b border-gray-100 flex justify-between items-center bg-white rounded-t-3xl sm:rounded-t-3xl">
+                <h3 class="text-lg font-bold text-gray-800">登記新賽果</h3>
+                <button @click="showAddMatch = false" class="text-gray-400 hover:text-gray-600 p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-5 space-y-6 bg-gray-50">
+                <div class="flex bg-gray-200 rounded-xl p-1">
+                    <button @click="matchForm.type = 'doubles'" class="flex-1 py-1.5 text-sm font-medium rounded-lg transition-colors" :class="matchForm.type === 'doubles' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'">雙打</button>
+                    <button @click="matchForm.type = 'singles'" class="flex-1 py-1.5 text-sm font-medium rounded-lg transition-colors" :class="matchForm.type === 'singles' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'">單打</button>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <!-- 隊伍 A -->
+                    <div class="bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
+                        <div class="text-center text-xs font-bold text-brand-600 mb-3">隊伍 A</div>
+                        <select v-model="matchForm.teamA1" class="w-full bg-gray-50 text-sm rounded-lg p-2 outline-none mb-2 text-gray-700">
+                            <option value="">選擇球員</option>
+                            <option v-for="p in players" :key="p.id" :value="p.id">{{ p.name }}</option>
+                        </select>
+                        <select v-if="matchForm.type === 'doubles'" v-model="matchForm.teamA2" class="w-full bg-gray-50 text-sm rounded-lg p-2 outline-none text-gray-700">
+                            <option value="">選擇球員</option>
+                            <option v-for="p in players" :key="p.id" :value="p.id">{{ p.name }}</option>
+                        </select>
+                        <div class="mt-4 flex items-center justify-center space-x-2">
+                            <button @click="matchForm.scoreA > 0 && matchForm.scoreA--" class="h-8 w-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 active:scale-95 transition-all">
+                                <i class="fa-solid fa-minus text-xs"></i>
+                            </button>
+                            <input type="number" v-model.number="matchForm.scoreA" placeholder="分數" class="w-14 text-center text-2xl font-bold bg-transparent border-b-2 border-transparent focus:border-brand-500 outline-none text-gray-800">
+                            <button @click="matchForm.scoreA++" class="h-8 w-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 active:scale-95 transition-all">
+                                <i class="fa-solid fa-plus text-xs"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <!-- 隊伍 B -->
+                    <div class="bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
+                        <div class="text-center text-xs font-bold text-brand-600 mb-3">隊伍 B</div>
+                        <select v-model="matchForm.teamB1" class="w-full bg-gray-50 text-sm rounded-lg p-2 outline-none mb-2 text-gray-700">
+                            <option value="">選擇球員</option>
+                            <option v-for="p in players" :key="p.id" :value="p.id">{{ p.name }}</option>
+                        </select>
+                        <select v-if="matchForm.type === 'doubles'" v-model="matchForm.teamB2" class="w-full bg-gray-50 text-sm rounded-lg p-2 outline-none text-gray-700">
+                            <option value="">選擇球員</option>
+                            <option v-for="p in players" :key="p.id" :value="p.id">{{ p.name }}</option>
+                        </select>
+                        <div class="mt-4 flex items-center justify-center space-x-2">
+                            <button @click="matchForm.scoreB > 0 && matchForm.scoreB--" class="h-8 w-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 active:scale-95 transition-all">
+                                <i class="fa-solid fa-minus text-xs"></i>
+                            </button>
+                            <input type="number" v-model.number="matchForm.scoreB" placeholder="分數" class="w-14 text-center text-2xl font-bold bg-transparent border-b-2 border-transparent focus:border-brand-500 outline-none text-gray-800">
+                            <button @click="matchForm.scoreB++" class="h-8 w-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 active:scale-95 transition-all">
+                                <i class="fa-solid fa-plus text-xs"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 bg-white border-t border-gray-100">
+                <button @click="addMatch" class="w-full bg-brand-500 text-white rounded-xl py-3 font-bold active:scale-95 transition-transform shadow-md shadow-brand-500/30">
+                    確認送出
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 提示訊息 -->
+    <div v-if="toastMsg" class="absolute top-10 left-1/2 -translate-x-1/2 bg-gray-800/90 text-white px-5 py-2 rounded-full text-sm font-medium z-50 animate-fade-in whitespace-nowrap shadow-xl">
+        {{ toastMsg }}
+    </div>
+</div>
+
+<script>
+    const { createApp, ref, computed, onMounted } = Vue;
+
+    createApp({
+        setup() {
+            const currentTab = ref('home');
+            const showAddPlayer = ref(false);
+            const showManagePlayers = ref(false);
+            const confirmDeleteId = ref(null);
+            const showAddMatch = ref(false);
+            const toastMsg = ref('');
+            
+            const leaderboardType = ref('all');
+
+            const roomCode = ref(localStorage.getItem('b_roomCode') || '');
+            const roomCodeInput = ref(roomCode.value);
+            
+            // 安全解析 JSON，避免壞檔崩潰
+            const safeParse = (key, defaultVal) => {
+                try {
+                    const data = localStorage.getItem(key);
+                    return data ? JSON.parse(data) : defaultVal;
+                } catch (e) {
+                    return defaultVal;
+                }
+            };
+            const players = ref(safeParse('b_players', []));
+            const matches = ref(safeParse('b_matches', []));
+            
+            const newPlayerName = ref('');
+            const matchForm = ref({ type: 'doubles', teamA1: '', teamA2: '', teamB1: '', teamB2: '', scoreA: 21, scoreB: 21 });
+
+            const autoSync = ref(localStorage.getItem('b_autoSync') !== 'false');
+            const syncStatus = ref('初始化中...');
+            const isSyncing = ref(false);
+            const isConnected = ref(false);
+            
+            const clientId = 'device_' + Math.random().toString(16).substr(2, 8);
+            let mqttClient = null;
+
+            const connectionColor = computed(() => {
+                if(isConnected.value && roomCode.value) return 'text-green-500';
+                if(isConnected.value) return 'text-gray-400';
+                return 'text-red-400';
+            });
+            const connectionIcon = computed(() => {
+                return isConnected.value ? 'fa-wifi' : 'fa-triangle-exclamation';
+            });
+
+            // ================= 格式化輔助函數 =================
+            const formatDateGroup = (timestamp) => {
+                const d = new Date(timestamp);
+                return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+            };
+            const formatTime = (timestamp) => {
+                const d = new Date(timestamp);
+                return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+            };
+            const getPlayerName = (id) => {
+                const p = players.value.find(p => p.id === id);
+                return p ? p.name : '未知';
+            };
+
+            // ================= 資料計算 =================
+            const groupedMatches = computed(() => {
+                const sorted = [...matches.value].sort((a, b) => b.timestamp - a.timestamp);
+                const groups = {};
+                
+                sorted.forEach(match => {
+                    const dateKey = formatDateGroup(match.timestamp);
+                    if (!groups[dateKey]) groups[dateKey] = [];
+                    groups[dateKey].push(match);
+                });
+
+                return Object.keys(groups).map(date => ({
+                    date: date,
+                    matches: groups[date]
+                })).sort((a, b) => new Date(b.date) - new Date(a.date));
+            });
+
+            // ★ 核心勝率邏輯分離 (雙打算組合，單打算個人)
+            const filteredStats = computed(() => {
+                let stats = {};
+
+                if (leaderboardType.value === 'doubles') {
+                    // --- 雙打：計算「組合」勝率 ---
+                    matches.value.forEach(m => {
+                        const tA = m.teamA || [];
+                        const tB = m.teamB || [];
+                        
+                        const sA = Number(m.scoreA);
+                        const sB = Number(m.scoreB);
+                        const winA = sA > sB;
+                        const winB = sB > sA;
+
+                        const processTeam = (team, isWin, isLoss) => {
+                            if (team.length !== 2) return; 
+                            
+                            const sortedIds = [...team].sort();
+                            const comboKey = sortedIds.join('_');
+                            
+                            if (!stats[comboKey]) {
+                                const name1 = getPlayerName(sortedIds[0]);
+                                const name2 = getPlayerName(sortedIds[1]);
+                                stats[comboKey] = { id: comboKey, name: `${name1} & ${name2}`, wins: 0, losses: 0, matches: 0, isCombo: true };
+                            }
+                            stats[comboKey].matches++;
+                            if (isWin) stats[comboKey].wins++;
+                            else if (isLoss) stats[comboKey].losses++;
+                        };
+
+                        processTeam(tA, winA, winB);
+                        processTeam(tB, winB, winA);
+                    });
+                } else {
+                    // --- 總覽 / 單打：計算「個人」勝率 ---
+                    players.value.forEach(p => {
+                        stats[p.id] = { id: p.id, name: p.name, wins: 0, losses: 0, matches: 0, isCombo: false };
+                    });
+
+                    matches.value.forEach(m => {
+                        const tA = m.teamA || [];
+                        const tB = m.teamB || [];
+                        const isSingles = (tA.length === 1 && tB.length === 1);
+                        
+                        // 依照篩選器過濾
+                        if (leaderboardType.value === 'singles' && !isSingles) return;
+
+                        const sA = Number(m.scoreA);
+                        const sB = Number(m.scoreB);
+                        const winA = sA > sB;
+                        const winB = sB > sA;
+
+                        tA.forEach(id => {
+                            if(stats[id]) {
+                                stats[id].matches++;
+                                if (winA) stats[id].wins++;
+                                else if (winB) stats[id].losses++;
+                            }
+                        });
+                        tB.forEach(id => {
+                            if(stats[id]) {
+                                stats[id].matches++;
+                                if (winB) stats[id].wins++;
+                                else if (winA) stats[id].losses++;
+                            }
+                        });
+                    });
+                }
+
+                // 計算勝率並排序
+                return Object.values(stats)
+                    .filter(s => s.matches > 0)
+                    .map(s => ({
+                        ...s,
+                        winRate: Math.round((s.wins / s.matches) * 100)
+                    }))
+                    .sort((a, b) => {
+                        if (b.winRate !== a.winRate) return b.winRate - a.winRate; // 依勝率
+                        if (b.wins !== a.wins) return b.wins - a.wins; // 依勝場數
+                        return b.matches - a.matches; // 依總場數
+                    });
+            });
+
+            // ================= MQTT 與 同步機制 =================
+            const initMQTT = () => {
+                if (typeof mqtt === 'undefined') {
+                    syncStatus.value = '連線模組載入失敗';
+                    return;
+                }
+                const brokerUrl = 'wss://broker.emqx.io:8084/mqtt';
+                try {
+                    mqttClient = mqtt.connect(brokerUrl, {
+                        clientId: clientId, clean: true, connectTimeout: 4000, reconnectPeriod: 2000,
+                    });
+
+                    mqttClient.on('connect', () => {
+                        isConnected.value = true;
+                        if(roomCode.value) {
+                            syncStatus.value = '頻道待命中';
+                            subscribeRoom();
+                        } else {
+                            syncStatus.value = '連線成功，請設定房號';
+                        }
+                    });
+
+                    mqttClient.on('error', (err) => {
+                        syncStatus.value = '伺服器連線異常';
+                    });
+
+                    mqttClient.on('offline', () => {
+                        isConnected.value = false;
+                        syncStatus.value = '網路離線';
+                    });
+
+                    mqttClient.on('message', (topic, message) => {
+                        try {
+                            const payload = JSON.parse(message.toString());
+                            if (payload.sender === clientId) return;
+
+                            isSyncing.value = true;
+                            setTimeout(() => isSyncing.value = false, 1000);
+
+                            if (payload.type === 'REQUEST_DATA') {
+                                if (autoSync.value && (players.value.length > 0 || matches.value.length > 0)) {
+                                    broadcastData(true);
+                                }
+                            } else if (payload.type === 'SYNC_DATA') {
+                                smartMerge(payload.data);
+                            }
+                        } catch (e) { }
+                    });
+                } catch (err) {
+                    syncStatus.value = '連線功能受限';
+                }
+            };
+
+            onMounted(() => { initMQTT(); });
+
+            const getTopicName = () => `badminton_app/room/${roomCode.value}`;
+
+            const subscribeRoom = () => {
+                if(!mqttClient || !mqttClient.connected) return;
+                mqttClient.subscribe(getTopicName(), (err) => {
+                    if (!err) {
+                        showToast(`已進入頻道: ${roomCode.value}`);
+                        requestSync();
+                    }
+                });
+            };
+
+            const joinRoom = () => {
+                const code = roomCodeInput.value.trim().toUpperCase();
+                if (!code) { showToast('請輸入房間號碼'); return; }
+                
+                if(roomCode.value && mqttClient) {
+                    mqttClient.unsubscribe(`badminton_app/room/${roomCode.value}`);
+                }
+                roomCode.value = code;
+                localStorage.setItem('b_roomCode', code);
+                syncStatus.value = '頻道待命中';
+                subscribeRoom();
+            };
+
+            const generateRoomCode = () => {
+                const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+                let code = '';
+                for(let i=0; i<6; i++) {
+                    code += chars.charAt(Math.floor(Math.random() * chars.length));
+                }
+                roomCodeInput.value = code;
+            };
+
+            const requestSync = () => {
+                if(!roomCode.value || !isConnected.value) { showToast('請先連線頻道'); return; }
+                mqttClient.publish(getTopicName(), JSON.stringify({ sender: clientId, type: 'REQUEST_DATA' }));
+                showToast('已發送資料請求...');
+            };
+
+            const broadcastData = (silent = false) => {
+                if(!roomCode.value || !isConnected.value) {
+                    if(!silent) showToast('未連線頻道，已存至本機'); return;
+                }
+                const dataPayload = { players: players.value, matches: matches.value };
+                mqttClient.publish(getTopicName(), JSON.stringify({
+                    sender: clientId, type: 'SYNC_DATA', data: dataPayload
+                }));
+                if(!silent) showToast('已發送資料至頻道');
+            };
+
+            const smartMerge = (remoteData) => {
+                if (!remoteData) return;
+                let isUpdated = false;
+                const playerMap = new Map();
+                players.value.forEach(p => playerMap.set(p.id, p));
+                
+                (remoteData.players || []).forEach(p => {
+                    if (!playerMap.has(p.id)) { playerMap.set(p.id, p); isUpdated = true; }
+                });
+                
+                const matchMap = new Map();
+                matches.value.forEach(m => matchMap.set(m.id, m));
+                
+                (remoteData.matches || []).forEach(m => {
+                    if (!matchMap.has(m.id)) { matchMap.set(m.id, m); isUpdated = true; }
+                });
+
+                if (isUpdated) {
+                    players.value = Array.from(playerMap.values());
+                    matches.value = Array.from(matchMap.values());
+                    saveLocal();
+                    showToast('已接收並合併最新資料！');
+                }
+            };
+
+            const saveLocal = () => {
+                localStorage.setItem('b_players', JSON.stringify(players.value));
+                localStorage.setItem('b_matches', JSON.stringify(matches.value));
+            };
+
+            const saveSettings = () => { localStorage.setItem('b_autoSync', autoSync.value); };
+
+            const showToast = (msg) => {
+                toastMsg.value = msg;
+                setTimeout(() => toastMsg.value = '', 2500);
+            };
+
+            // ================= 球員與賽果管理 =================
+            const addPlayer = () => {
+                if (!newPlayerName.value.trim()) return;
+                players.value.push({
+                    id: 'p_' + Date.now() + Math.random().toString(36).substr(2, 5),
+                    name: newPlayerName.value.trim()
+                });
+                newPlayerName.value = '';
+                showAddPlayer.value = false;
+                saveLocal();
+                showToast('球友新增成功');
+                if(autoSync.value) broadcastData(true);
+            };
+
+            const updatePlayerName = () => {
+                saveLocal();
+                if(autoSync.value) broadcastData(true);
+            };
+
+            const deletePlayer = (id) => {
+                players.value = players.value.filter(p => p.id !== id);
+                confirmDeleteId.value = null;
+                saveLocal();
+                showToast('已刪除球友');
+                if(autoSync.value) broadcastData(true);
+            };
+
+            const addMatch = () => {
+                const f = matchForm.value;
+                
+                if (!f.teamA1 || !f.teamB1 || f.scoreA === null || f.scoreA === '' || f.scoreB === null || f.scoreB === '') {
+                    showToast('請填寫完整對戰資訊與分數'); 
+                    return;
+                }
+
+                const sA = Number(f.scoreA);
+                const sB = Number(f.scoreB);
+                
+                let tA = [f.teamA1]; 
+                let tB = [f.teamB1];
+                
+                if (f.type === 'doubles') {
+                    if (!f.teamA2 || !f.teamB2) {
+                        showToast('雙打模式請完整選擇四位球員');
+                        return;
+                    }
+                    tA.push(f.teamA2);
+                    tB.push(f.teamB2);
+                }
+
+                const allPlayers = [...tA, ...tB];
+                const uniquePlayers = new Set(allPlayers);
+                if (uniquePlayers.size !== allPlayers.length) {
+                    showToast('錯誤：同一位球員不能重複上場');
+                    return;
+                }
+
+                matches.value.push({
+                    id: 'm_' + Date.now() + Math.random().toString(36).substr(2, 5),
+                    timestamp: Date.now(),
+                    teamA: tA,
+                    teamB: tB,
+                    scoreA: sA,
+                    scoreB: sB
+                });
+
+                showAddMatch.value = false;
+                matchForm.value = { type: f.type, teamA1: '', teamA2: '', teamB1: '', teamB2: '', scoreA: 21, scoreB: 21 };
+                saveLocal();
+                showToast('賽果已紀錄');
+                if(autoSync.value) broadcastData(true);
+            };
+
+            return {
+                currentTab, showAddPlayer, showManagePlayers, confirmDeleteId, showAddMatch, toastMsg,
+                roomCode, roomCodeInput, players, matches, autoSync, syncStatus, isSyncing,
+                newPlayerName, matchForm, connectionColor, connectionIcon,
+                leaderboardType, filteredStats, groupedMatches,
+                formatTime, getPlayerName,
+                addPlayer, updatePlayerName, deletePlayer, addMatch, joinRoom, generateRoomCode, requestSync, broadcastData, saveSettings
+            };
+        }
+    }).mount('#app');
+</script>
+
+<style>
+    .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+    .animate-slide-up { animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(5px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes slideUp {
+        from { transform: translateY(100%); }
+        to { transform: translateY(0); }
+    }
+</style>
+</body>
+</html>
