@@ -362,7 +362,6 @@
             const confirmDeleteId = ref(null);
             const showAddMatch = ref(false);
             const toastMsg = ref('');
-            const newPlayerName = ref('');
             
             const leaderboardType = ref('all');
 
@@ -378,8 +377,37 @@
                     return defaultVal;
                 }
             };
-            const players = ref(safeParse('b_players', []));
-            const matches = ref(safeParse('b_matches', []));
+
+            // ====== 舊版資料無縫轉移 ======
+            if (localStorage.getItem('b_players') && roomCode.value) {
+                localStorage.setItem(`b_players_${roomCode.value}`, localStorage.getItem('b_players'));
+                localStorage.setItem(`b_matches_${roomCode.value}`, localStorage.getItem('b_matches'));
+                localStorage.removeItem('b_players');
+                localStorage.removeItem('b_matches');
+            }
+
+            // ====== 房間獨立資料載入機制 ======
+            const players = ref([]);
+            const matches = ref([]);
+
+            const loadDataForRoom = (code) => {
+                if (!code) {
+                    players.value = [];
+                    matches.value = [];
+                    return;
+                }
+                players.value = safeParse(`b_players_${code}`, []);
+                matches.value = safeParse(`b_matches_${code}`, []);
+            };
+
+            // 啟動時加載當前房間資料
+            loadDataForRoom(roomCode.value);
+
+            const saveLocal = () => {
+                if (!roomCode.value) return;
+                localStorage.setItem(`b_players_${roomCode.value}`, JSON.stringify(players.value));
+                localStorage.setItem(`b_matches_${roomCode.value}`, JSON.stringify(matches.value));
+            };
             
             // 預設分數為 21
             const defaultMatchForm = () => ({ type: 'doubles', teamA1: '', teamA2: '', teamB1: '', teamB2: '', scoreA: 21, scoreB: 21 });
@@ -593,6 +621,10 @@
                 }
                 roomCode.value = code;
                 localStorage.setItem('b_roomCode', code);
+                
+                // 載入新房間的本機資料（若全新則為空）
+                loadDataForRoom(code);
+                
                 syncStatus.value = '頻道待命中';
                 subscribeRoom();
             };
@@ -652,11 +684,6 @@
                 }
             };
 
-            const saveLocal = () => {
-                localStorage.setItem('b_players', JSON.stringify(players.value));
-                localStorage.setItem('b_matches', JSON.stringify(matches.value));
-            };
-
             const saveSettings = () => { localStorage.setItem('b_autoSync', autoSync.value); };
 
             const showToast = (msg) => {
@@ -665,6 +692,8 @@
             };
 
             // ================= 球員與賽果管理 =================
+            const newPlayerName = ref('');
+
             const addPlayer = () => {
                 if (!newPlayerName.value.trim()) return;
                 players.value.push({
