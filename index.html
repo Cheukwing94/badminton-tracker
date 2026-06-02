@@ -114,7 +114,8 @@
 
             <div class="space-y-3">
                 <div v-for="(stat, index) in filteredStats" :key="stat.id" 
-                     class="bg-paper rounded-2xl p-4 shadow-sm flex items-center justify-between transition-transform active:scale-95">
+                     @click="viewDetailHistory(stat)"
+                     class="bg-paper rounded-2xl p-4 shadow-sm flex items-center justify-between transition-transform active:scale-95 cursor-pointer">
                     <div class="flex items-center flex-1 overflow-hidden">
                         <div class="w-6 text-center font-bold mr-3 shrink-0" :class="index === 0 ? 'text-yellow-500 text-lg' : (index === 1 ? 'text-gray-400 text-base' : (index === 2 ? 'text-amber-600 text-base' : 'text-gray-300 text-sm'))">
                             <span v-if="index > 2">{{ index + 1 }}</span>
@@ -128,9 +129,12 @@
                             <div class="text-[10px] text-gray-400 mt-0.5">{{ stat.wins }}勝 {{ stat.losses }}敗 (共{{ stat.matches }}場)</div>
                         </div>
                     </div>
-                    <div class="text-right shrink-0 ml-2">
-                        <p class="text-lg font-bold text-brand-600">{{ stat.winRate }}%</p>
-                        <p class="text-[10px] text-gray-400">勝率</p>
+                    <div class="text-right shrink-0 ml-2 flex items-center space-x-2">
+                        <div>
+                            <p class="text-lg font-bold text-brand-600">{{ stat.winRate }}%</p>
+                            <p class="text-[10px] text-gray-400">勝率</p>
+                        </div>
+                        <i class="fa-solid fa-chevron-right text-gray-300 text-xs pl-1"></i>
                     </div>
                 </div>
             </div>
@@ -345,6 +349,82 @@
         </div>
     </div>
 
+    <!-- 戰績詳情彈窗 -->
+    <div v-if="showDetailHistory && selectedStat" class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm z-50 flex justify-center items-end sm:items-center pb-0 sm:pb-0 overflow-hidden">
+        <div class="bg-paper w-full h-[80vh] sm:h-auto sm:max-h-[85vh] sm:w-[90%] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col animate-slide-up">
+            <div class="p-4 border-b border-gray-100 flex justify-between items-center bg-white rounded-t-3xl sm:rounded-t-3xl">
+                <div>
+                    <h3 class="text-lg font-bold text-gray-800">{{ selectedStat.name }}</h3>
+                    <p class="text-[10px] text-gray-400">歷史對局與戰績細節</p>
+                </div>
+                <button @click="showDetailHistory = false; selectedStat = null" class="text-gray-400 hover:text-gray-600 p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <!-- 數據概覽板 -->
+            <div class="p-4 bg-brand-50 border-b border-brand-100 flex justify-around items-center text-center">
+                <div>
+                    <p class="text-2xl font-bold text-brand-600">{{ selectedStat.winRate }}%</p>
+                    <p class="text-[10px] text-gray-500">勝率</p>
+                </div>
+                <div class="h-8 w-[1px] bg-brand-200"></div>
+                <div>
+                    <p class="text-xl font-bold text-gray-700">{{ selectedStat.wins }}</p>
+                    <p class="text-[10px] text-gray-500">勝場</p>
+                </div>
+                <div class="h-8 w-[1px] bg-brand-200"></div>
+                <div>
+                    <p class="text-xl font-bold text-gray-700">{{ selectedStat.losses }}</p>
+                    <p class="text-[10px] text-gray-500">敗場</p>
+                </div>
+                <div class="h-8 w-[1px] bg-brand-200"></div>
+                <div>
+                    <p class="text-xl font-bold text-gray-700">{{ selectedStat.matches }}</p>
+                    <p class="text-[10px] text-gray-500">總場數</p>
+                </div>
+            </div>
+            <!-- 詳情對局列表 -->
+            <div class="flex-1 overflow-y-auto p-5 space-y-6 bg-gray-50">
+                <div v-if="selectedGroupedMatches.length === 0" class="text-center text-gray-400 text-sm mt-5">此分類尚未有對戰紀錄</div>
+                <div v-for="group in selectedGroupedMatches" :key="group.date">
+                    <div class="flex items-center mb-3">
+                        <div class="bg-gray-200 h-[1px] flex-1"></div>
+                        <span class="px-3 text-xs font-bold text-gray-400 flex items-center">
+                            <i class="fa-regular fa-calendar mr-1"></i> {{ group.date }}
+                        </span>
+                        <div class="bg-gray-200 h-[1px] flex-1"></div>
+                    </div>
+                    
+                    <div class="space-y-3">
+                        <div v-for="match in group.matches" :key="match.id" class="bg-white rounded-2xl p-4 shadow-sm relative overflow-hidden border border-gray-100">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-[10px] font-bold px-2 py-0.5 rounded-md" :class="((match.teamA || []).length===1 && (match.teamB || []).length===1) ? 'bg-blue-50 text-blue-500' : 'bg-purple-50 text-purple-500'">
+                                    {{ ((match.teamA || []).length===1 && (match.teamB || []).length===1) ? '單打' : '雙打' }}
+                                </span>
+                                <span class="text-[10px] font-bold px-2 py-0.5 rounded-md" :class="isMatchWon(match) ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'">
+                                    {{ isMatchWon(match) ? '勝 W' : '敗 L' }}
+                                </span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <div class="flex-1 text-center" :class="Number(match.scoreA) > Number(match.scoreB) ? 'text-brand-600 font-bold' : 'text-gray-500'">
+                                    <p class="text-sm truncate">{{ getPlayerName((match.teamA || [])[0]) }}</p>
+                                    <p class="text-sm truncate" v-if="(match.teamA || [])[1]">{{ getPlayerName((match.teamA || [])[1]) }}</p>
+                                </div>
+                                <div class="px-3 flex items-center justify-center space-x-2">
+                                    <span class="text-2xl font-bold" :class="Number(match.scoreA) > Number(match.scoreB) ? 'text-gray-800' : 'text-gray-400'">{{ match.scoreA }}</span>
+                                    <span class="text-gray-300 text-xs mt-1">vs</span>
+                                    <span class="text-2xl font-bold" :class="Number(match.scoreB) > Number(match.scoreA) ? 'text-gray-800' : 'text-gray-400'">{{ match.scoreB }}</span>
+                                </div>
+                                <div class="flex-1 text-center" :class="Number(match.scoreB) > Number(match.scoreA) ? 'text-brand-600 font-bold' : 'text-gray-500'">
+                                    <p class="text-sm truncate">{{ getPlayerName((match.teamB || [])[0]) }}</p>
+                                    <p class="text-sm truncate" v-if="(match.teamB || [])[1]">{{ getPlayerName((match.teamB || [])[1]) }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 提示訊息 -->
     <div v-if="toastMsg" class="absolute top-10 left-1/2 -translate-x-1/2 bg-gray-800/90 text-white px-5 py-2 rounded-full text-sm font-medium z-50 animate-fade-in whitespace-nowrap shadow-xl">
         {{ toastMsg }}
@@ -363,6 +443,9 @@
             const showAddMatch = ref(false);
             const toastMsg = ref('');
             
+            const showDetailHistory = ref(false);
+            const selectedStat = ref(null);
+
             const leaderboardType = ref('all');
 
             const roomCode = ref(localStorage.getItem('b_roomCode') || '');
@@ -444,6 +527,81 @@
                 return p ? p.name : '未知';
             };
 
+            const viewDetailHistory = (stat) => {
+                selectedStat.value = stat;
+                showDetailHistory.value = true;
+            };
+
+            // ★ 修正對戰紀錄過濾機制，確保單打/雙打排名互不干擾，且雙打能正常獲取紀錄
+            const selectedPlayerMatches = computed(() => {
+                if (!selectedStat.value) return [];
+                const stat = selectedStat.value;
+                const currentType = leaderboardType.value; // 'all', 'singles', 'doubles'
+
+                return matches.value.filter(m => {
+                    const tA = m.teamA || [];
+                    const tB = m.teamB || [];
+                    const isSingles = (tA.length === 1 && tB.length === 1);
+
+                    if (stat.isCombo) {
+                        // 雙打組合篩選 (使用 + 切分 ID)
+                        if (tA.length !== 2 && tB.length !== 2) return false;
+                        const ids = stat.id.split('+');
+                        const hasAllA = ids.every(id => tA.includes(id)) && tA.length === 2;
+                        const hasAllB = ids.every(id => tB.includes(id)) && tB.length === 2;
+                        return hasAllA || hasAllB;
+                    } else {
+                        // 個人篩選
+                        const hasPlayer = tA.includes(stat.id) || tB.includes(stat.id);
+                        if (!hasPlayer) return false;
+
+                        // 根據當前選擇的排行版類型，限制呈現對應的賽果
+                        if (currentType === 'singles') {
+                            return isSingles;
+                        } else if (currentType === 'doubles') {
+                            return !isSingles;
+                        }
+                        return true; // 總覽 tab 顯示全部
+                    }
+                }).sort((a, b) => b.timestamp - a.timestamp);
+            });
+
+            const selectedGroupedMatches = computed(() => {
+                const groups = {};
+                selectedPlayerMatches.value.forEach(match => {
+                    const dateKey = formatDateGroup(match.timestamp);
+                    if (!groups[dateKey]) groups[dateKey] = [];
+                    groups[dateKey].push(match);
+                });
+                return Object.keys(groups).map(date => ({
+                    date: date,
+                    matches: groups[date]
+                })).sort((a, b) => new Date(b.date) - new Date(a.date));
+            });
+
+            // ★ 修正雙打戰績勝敗判讀：改以 + 號分割 ID
+            const isMatchWon = (match) => {
+                if (!selectedStat.value) return false;
+                const stat = selectedStat.value;
+                const sA = Number(match.scoreA);
+                const sB = Number(match.scoreB);
+                const winA = sA > sB;
+                const winB = sB > sA;
+
+                const tA = match.teamA || [];
+                const tB = match.teamB || [];
+
+                if (stat.isCombo) {
+                    const ids = stat.id.split('+');
+                    const hasAllA = ids.every(id => tA.includes(id)) && tA.length === 2;
+                    if (hasAllA) return winA;
+                    return winB;
+                } else {
+                    if (tA.includes(stat.id)) return winA;
+                    return winB;
+                }
+            };
+
             // ================= 分數調整函數 =================
             const adjustScore = (team, delta) => {
                 const current = Number(matchForm.value['score' + team]) || 0;
@@ -470,6 +628,7 @@
                 })).sort((a, b) => new Date(b.date) - new Date(a.date));
             });
 
+            // ★ 雙打組合 ID 串接符號改為 + 號以修復 bug
             const filteredStats = computed(() => {
                 let stats = {};
 
@@ -487,7 +646,7 @@
                             if (team.length !== 2) return; 
                             
                             const sortedIds = [...team].sort();
-                            const comboKey = sortedIds.join('_');
+                            const comboKey = sortedIds.join('+'); // 核心修改：改為 + 號
                             
                             if (!stats[comboKey]) {
                                 const name1 = getPlayerName(sortedIds[0]);
@@ -607,7 +766,6 @@
                 mqttClient.subscribe(getTopicName(), (err) => {
                     if (!err) {
                         showToast(`已進入頻道: ${roomCode.value}`);
-                        // 伺服器會自動把保留的資料丟過來
                     }
                 });
             };
@@ -648,7 +806,6 @@
                 }
                 const dataPayload = { players: players.value, matches: matches.value };
                 
-                // { retain: true }：讓伺服器永遠記住最後一次的最新資料給晚進來的人
                 mqttClient.publish(getTopicName(), JSON.stringify({
                     sender: clientId, type: 'SYNC_DATA', data: dataPayload
                 }), { retain: true });
@@ -766,9 +923,9 @@
                 if(autoSync.value) broadcastData(true);
             };
 
-            // 確保所有被模板用到的變數跟方法都有被 return！
             return {
                 currentTab, showAddPlayer, showManagePlayers, confirmDeleteId, showAddMatch, toastMsg,
+                showDetailHistory, selectedStat, selectedGroupedMatches, viewDetailHistory, isMatchWon,
                 roomCode, roomCodeInput, players, matches, syncStatus, isSyncing,
                 newPlayerName, matchForm, connectionColor, connectionIcon, autoSync,
                 leaderboardType, filteredStats, groupedMatches,
