@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -61,7 +62,7 @@
         }
     </style>
 </head>
-<body class="text-gray-700 antialiased h-screen flex justify-center pb-16">
+<body class="text-gray-700 antialiased h-screen flex justify-center pb-20">
 
 <div id="app" class="w-full max-w-md bg-[#f0f4f2] min-h-screen relative shadow-2xl overflow-hidden flex flex-col">
     
@@ -84,10 +85,10 @@
     </header>
 
     <!-- 主要內容區 -->
-    <main class="flex-1 overflow-y-auto no-scrollbar p-5 space-y-6">
+    <main class="flex-1 overflow-y-auto no-scrollbar p-5 space-y-6 pb-24">
         
         <!-- ================= [分頁 1] 首頁 / 戰力榜 ================= -->
-        <div v-show="currentTab === 'home'" class="animate-fade-in pb-16">
+        <div v-show="currentTab === 'home'" class="animate-fade-in">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-lg font-bold text-gray-700">勝率排行榜</h2>
                 <div class="flex space-x-2">
@@ -141,7 +142,7 @@
         </div>
 
         <!-- ================= [分頁 2] 對局紀錄 ================= -->
-        <div v-show="currentTab === 'matches'" class="animate-fade-in relative pb-16">
+        <div v-show="currentTab === 'matches'" class="animate-fade-in">
             <h2 class="text-lg font-bold text-gray-700 mb-4">歷史對局</h2>
             
             <div v-if="matches.length === 0" class="bg-paper rounded-3xl p-8 text-center shadow-sm">
@@ -188,19 +189,216 @@
             </div>
 
             <!-- 懸浮新增對局按鈕 -->
-            <button @click="showAddMatch = true" class="fixed bottom-20 right-6 h-14 w-14 bg-brand-500 text-white rounded-full shadow-lg shadow-brand-500/40 flex items-center justify-center text-2xl active:scale-95 transition-transform z-20">
+            <button @click="showAddMatch = true" class="fixed bottom-24 right-6 h-14 w-14 bg-brand-500 text-white rounded-full shadow-lg shadow-brand-500/40 flex items-center justify-center text-2xl active:scale-95 transition-transform z-20">
                 <i class="fa-solid fa-plus"></i>
             </button>
         </div>
 
-        <!-- ================= [分頁 3] 同步中心 ================= -->
+        <!-- ================= [分頁 3] 📈 數據統計中心 ================= -->
+        <div v-show="currentTab === 'stats'" class="animate-fade-in space-y-5">
+            
+            <!-- 頂部切換與條件選擇器 -->
+            <div class="bg-paper rounded-3xl p-5 shadow-sm space-y-4">
+                <div class="flex justify-between items-center border-b border-gray-100 pb-3">
+                    <h2 class="text-base font-bold text-gray-800">數據統計維度</h2>
+                    <!-- 時間篩選器 -->
+                    <div class="flex bg-gray-200 rounded-lg p-0.5 text-[11px] font-medium">
+                        <button @click="statsTimeRange = 'today'" class="px-2 py-1 rounded" :class="statsTimeRange === 'today' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'">單日</button>
+                        <button @click="statsTimeRange = 'month'" class="px-2 py-1 rounded" :class="statsTimeRange === 'month' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'">單月</button>
+                        <button @click="statsTimeRange = 'year'" class="px-2 py-1 rounded" :class="statsTimeRange === 'year' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'">全年</button>
+                        <button @click="statsTimeRange = 'all'" class="px-2 py-1 rounded" :class="statsTimeRange === 'all' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'">全部</button>
+                    </div>
+                </div>
+
+                <!-- 動態切換的客製化年月日選擇控制項 -->
+                <div class="flex items-center justify-between text-xs pt-1">
+                    <span class="text-gray-400 font-medium">選擇篩選範圍:</span>
+                    
+                    <!-- 1. 單日選擇器 -->
+                    <div v-if="statsTimeRange === 'today'">
+                        <input type="date" v-model="selectedDate" class="bg-gray-100 border border-gray-200 text-gray-700 px-3 py-1.5 rounded-xl font-medium outline-none focus:border-brand-500 text-center">
+                    </div>
+
+                    <!-- 2. 單月選擇器 -->
+                    <div v-if="statsTimeRange === 'month'">
+                        <input type="month" v-model="selectedMonth" class="bg-gray-100 border border-gray-200 text-gray-700 px-3 py-1.5 rounded-xl font-medium outline-none focus:border-brand-500 text-center">
+                    </div>
+
+                    <!-- 3. 全年選擇器 -->
+                    <div v-if="statsTimeRange === 'year'">
+                        <select v-model="selectedYear" class="bg-gray-100 border border-gray-200 text-gray-700 px-3 py-1.5 rounded-xl font-medium outline-none focus:border-brand-500 text-center">
+                            <option v-for="y in availableYears" :key="y" :value="y">{{ y }} 年</option>
+                        </select>
+                    </div>
+
+                    <!-- 4. 全部時間 -->
+                    <div v-if="statsTimeRange === 'all'" class="text-brand-600 font-bold bg-brand-50 px-3 py-1.5 rounded-xl border border-brand-100">
+                        不限時間（顯示生涯全部紀錄）
+                    </div>
+                </div>
+            </div>
+
+            <!-- 模塊 1：基礎統計大盤 -->
+            <div class="bg-paper rounded-3xl p-5 shadow-sm space-y-5">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-brand-50 rounded-2xl p-4 text-center">
+                        <p class="text-2xl font-bold text-brand-600">{{ timeFilteredMatches.length }}</p>
+                        <p class="text-[10px] text-gray-500 mt-1"><i class="fa-solid fa-shuttlecock mr-1"></i>該時段總打球場數</p>
+                    </div>
+                    <div class="bg-gray-50 rounded-2xl p-4 text-center">
+                        <p class="text-2xl font-bold text-gray-700">{{ activeDaysCount }}</p>
+                        <p class="text-[10px] text-gray-500 mt-1"><i class="fa-solid fa-calendar-day mr-1"></i>活動打球天數</p>
+                    </div>
+                </div>
+
+                <!-- 圓餅圖：單打 vs 雙打佔比 -->
+                <div v-if="timeFilteredMatches.length > 0" class="flex items-center justify-between border-t border-gray-100 pt-4">
+                    <div class="w-1/2 flex justify-center">
+                        <!-- SVG 極簡圓餅圖 -->
+                        <svg class="w-24 h-24 transform -rotate-90" viewBox="0 0 32 32">
+                            <circle r="16" cx="16" cy="16" fill="#e5ede8" />
+                            <circle r="8" cx="16" cy="16" 
+                                    fill="transparent" 
+                                    stroke="#3b82f6" 
+                                    stroke-width="16" 
+                                    :stroke-dasharray="singlesStrokeDash" />
+                            <circle r="8" cx="16" cy="16" 
+                                    fill="transparent" 
+                                    stroke="#8b5cf6" 
+                                    stroke-width="16" 
+                                    :stroke-dasharray="doublesStrokeDash" />
+                            <!-- 中心遮罩圈 -->
+                            <circle r="9" cx="16" cy="16" fill="#fcfcfc" />
+                        </svg>
+                    </div>
+                    <div class="w-1/2 space-y-2 pl-4">
+                        <h4 class="text-xs font-bold text-gray-500">賽制佔比</h4>
+                        <div class="flex items-center text-xs">
+                            <span class="w-3 h-3 bg-blue-500 rounded-full mr-2"></span>
+                            <span>單打: {{ singlesCount }} 場 ({{ singlesPercent }}%)</span>
+                        </div>
+                        <div class="flex items-center text-xs">
+                            <span class="w-3 h-3 bg-purple-500 rounded-full mr-2"></span>
+                            <span>雙打: {{ doublesCount }} 場 ({{ doublesPercent }}%)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 趨勢折線圖 -->
+                <div v-if="timeFilteredMatches.length > 0" class="border-t border-gray-100 pt-4">
+                    <h4 class="text-xs font-bold text-gray-400 mb-2">場數起伏趨勢</h4>
+                    <div class="h-24 w-full relative pt-2">
+                        <!-- SVG 折線圖 -->
+                        <svg class="w-full h-full" viewBox="0 0 100 30" preserveAspectRatio="none">
+                            <path :d="trendLinePath" fill="none" stroke="#7a9e8b" stroke-width="1.5" stroke-linecap="round" />
+                            <!-- 亮點小圓球 -->
+                            <circle v-for="pt in trendPoints" :cx="pt.x" :cy="pt.y" r="1" fill="#5e7d6d" />
+                        </svg>
+                        <div class="flex justify-between text-[8px] text-gray-400 mt-1 px-1">
+                            <span>{{ trendLabels.start }}</span>
+                            <span>{{ trendLabels.end }}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div v-else class="text-center text-gray-400 text-xs py-5">
+                    該選取範圍內尚無任何歷史對戰紀錄
+                </div>
+            </div>
+
+            <!-- 模塊 2：成員參與率/出席率（智慧動態切換） -->
+            <div class="bg-paper rounded-3xl p-5 shadow-sm space-y-4">
+                <!-- 標題會根據選取模式動態切換 -->
+                <h3 class="text-sm font-bold text-gray-700 flex items-center">
+                    <i class="fa-solid fa-calendar-check mr-2 text-brand-500"></i> 
+                    {{ statsTimeRange === 'today' ? '當日場次參與率 (場次為單位)' : '成員出席與參與率 (日子為單位)' }}
+                </h3>
+                
+                <!-- 無對局數據時 -->
+                <div v-if="timeFilteredMatches.length === 0" class="text-center text-gray-400 text-xs py-5">
+                    {{ statsTimeRange === 'today' ? '當天尚無打球場次紀錄' : '此時段尚無出席天數數據' }}
+                </div>
+                
+                <!-- 正常計算渲染 -->
+                <div v-else class="space-y-4">
+                    <!-- 全勤與稀客雙卡 (標題與百分比隨模式自適應調整) -->
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="border border-green-100 bg-green-50/50 p-3 rounded-2xl">
+                            <p class="text-[10px] font-bold text-green-700">
+                                {{ statsTimeRange === 'today' ? '🥇 當日勞模 (打最多場)' : '🥇 全勤模範 (出勤最高)' }}
+                            </p>
+                            <p class="font-bold text-gray-800 text-sm mt-1 truncate">{{ activeAttendanceStats[0]?.name }}</p>
+                            <p class="text-[10px] text-gray-500 mt-0.5">{{ activeAttendanceStats[0]?.rate }}% {{ statsTimeRange === 'today' ? '參與率' : '出席率' }}</p>
+                        </div>
+                        <div class="border border-amber-100 bg-amber-50/50 p-3 rounded-2xl">
+                            <p class="text-[10px] font-bold text-amber-700">
+                                {{ statsTimeRange === 'today' ? '👥 當日潛水 (打最少場)' : '👥 稀客駕到 (出勤最低)' }}
+                            </p>
+                            <p class="font-bold text-gray-800 text-sm mt-1 truncate">{{ activeAttendanceStats[activeAttendanceStats.length - 1]?.name }}</p>
+                            <p class="text-[10px] text-gray-500 mt-0.5">{{ activeAttendanceStats[activeAttendanceStats.length - 1]?.rate }}% {{ statsTimeRange === 'today' ? '參與率' : '出席率' }}</p>
+                        </div>
+                    </div>
+
+                    <!-- 詳細參與率名單 -->
+                    <div class="space-y-2 border-t border-gray-100 pt-3">
+                        <h4 class="text-xs font-bold text-gray-400 mb-2">
+                            {{ statsTimeRange === 'today' ? `當天場次參與率明細 (總打場數: ${timeFilteredMatches.length} 場)` : `球隊出勤天數明細表 (總打球天數: ${activeDaysCount} 天)` }}
+                        </h4>
+                        <div v-for="p in activeAttendanceStats" :key="p.id" class="flex items-center justify-between text-xs py-1">
+                            <span class="font-medium text-gray-700 w-24 truncate">{{ p.name }}</span>
+                            <!-- 橫向進度條 -->
+                            <div class="flex-1 mx-3 bg-gray-100 h-2 rounded-full overflow-hidden">
+                                <div class="bg-brand-500 h-full rounded-full" :style="{ width: p.rate + '%' }"></div>
+                            </div>
+                            <span class="text-gray-400 shrink-0 font-mono">
+                                {{ p.rate }}% ({{ statsTimeRange === 'today' ? `打 ${p.rawCount} 場` : `出席 ${p.rawCount} 天` }})
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 模塊 3：近況走勢與成就系統 -->
+            <div class="bg-paper rounded-3xl p-5 shadow-sm space-y-4">
+                <h3 class="text-sm font-bold text-gray-700 flex items-center"><i class="fa-solid fa-award mr-2 text-brand-500"></i> 近況走勢與成就系統</h3>
+                
+                <div v-if="players.length === 0" class="text-center text-gray-400 text-xs py-5">請先新增球友</div>
+
+                <div v-else class="space-y-4">
+                    <div v-for="form in formAndAchievements" :key="form.id" class="border-b border-gray-100 pb-3 last:border-b-0 last:pb-0">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="font-bold text-xs text-gray-800">{{ form.name }}</span>
+                            <!-- 近5場 W/L 走勢 -->
+                            <div class="flex space-x-1">
+                                <span v-for="(result, idx) in form.recentForm" :key="idx" 
+                                      class="h-4 w-4 rounded-full text-[9px] font-bold flex items-center justify-center text-white"
+                                      :class="result === 'W' ? 'bg-green-500 shadow-sm shadow-green-500/20' : 'bg-red-400 shadow-sm shadow-red-400/20'">
+                                    {{ result }}
+                                </span>
+                                <span v-if="form.recentForm.length === 0" class="text-[10px] text-gray-400">尚無紀錄</span>
+                            </div>
+                        </div>
+                        <!-- 成就徽章 -->
+                        <div class="flex flex-wrap gap-1">
+                            <span v-for="badge in form.badges" :key="badge.text"
+                                  class="text-[9px] font-bold px-2 py-0.5 rounded-full border flex items-center"
+                                  :class="badge.color">
+                                <i :class="badge.icon + ' mr-1'"></i> {{ badge.text }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= [分頁 4] 同步中心 ================= -->
         <div v-show="currentTab === 'sync'" class="animate-fade-in pb-16">
             <h2 class="text-lg font-bold text-gray-700 mb-4">即時房間同步</h2>
             
-            <div class="bg-paper rounded-2xl p-5 shadow-sm mb-6 border border-brand-100">
+            <div class="bg-paper rounded-2xl p-5 shadow-sm mb-5 border border-brand-100">
                 <div class="flex justify-between items-end mb-2">
                     <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider">輸入房間號碼以連線</label>
-                    <button @click="generateRoomCode" class="text-xs text-brand-500 active:scale-95 transition-transform font-bold"><i class="fa-solid fa-dice mr-1"></i>隨機</button>
+                    <button @click="generateRoomCode" class="text-xs text-brand-500 active:scale-95 transition-transform font-bold"><i class="fa-solid fa-dice mr-1"></i>隨機產生</button>
                 </div>
                 <div class="flex space-x-2">
                     <input v-model="roomCodeInput" type="text" placeholder="例: BADM77" class="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-4 py-2 outline-none focus:border-brand-500 font-mono uppercase text-gray-700">
@@ -208,15 +406,16 @@
                         連線頻道
                     </button>
                 </div>
-                <div class="mt-3 bg-green-50 p-3 rounded-lg flex items-start">
+                <div class="mt-3 bg-green-50 p-2.5 rounded-lg flex items-start">
                     <i class="fa-solid fa-circle-check text-green-500 mt-0.5 mr-2"></i>
                     <p class="text-[11px] text-gray-600 leading-relaxed">
-                        目前已升級為 <strong>全自動同步模式</strong>。只要同房號，任何新增或修改都會瞬間同步給所有人，晚進房的人也會自動載入！
+                        目前已啟用 <strong>全自動同步模式</strong>。只要同房號，任何修改會即時廣播，不論誰先開、後開網頁，資料都會自動同步對齊！
                     </p>
                 </div>
             </div>
 
-            <div class="space-y-3" :class="{'opacity-50 pointer-events-none': !roomCode}">
+            <!-- 強制手動重整與廣播 -->
+            <div :class="{'opacity-50 pointer-events-none': !roomCode}">
                 <button @click="requestSync" class="w-full bg-paper border border-gray-200 text-gray-600 rounded-2xl p-4 text-left relative overflow-hidden shadow-sm active:scale-95 transition-transform">
                     <div class="relative z-10 flex items-center justify-between">
                         <div>
@@ -233,18 +432,22 @@
     </main>
 
     <!-- 底部導航欄 -->
-    <nav class="absolute bottom-0 w-full glass-nav px-6 py-3 flex justify-around items-center z-10 pb-5 rounded-t-3xl border-t border-gray-100">
+    <nav class="absolute bottom-0 w-full glass-nav px-4 py-3 flex justify-around items-center z-10 pb-5 rounded-t-3xl border-t border-gray-100">
         <button @click="currentTab = 'home'" class="flex flex-col items-center p-2 transition-colors" :class="currentTab === 'home' ? 'text-brand-600' : 'text-gray-400 hover:text-gray-600'">
-            <i class="fa-solid fa-trophy text-xl mb-1"></i>
-            <span class="text-[10px] font-medium mt-1">戰力榜</span>
+            <i class="fa-solid fa-trophy text-lg mb-1"></i>
+            <span class="text-[10px] font-medium">戰力榜</span>
         </button>
         <button @click="currentTab = 'matches'" class="flex flex-col items-center p-2 transition-colors" :class="currentTab === 'matches' ? 'text-brand-600' : 'text-gray-400 hover:text-gray-600'">
-            <i class="fa-solid fa-clipboard-list text-xl mb-1"></i>
-            <span class="text-[10px] font-medium mt-1">紀錄</span>
+            <i class="fa-solid fa-clipboard-list text-lg mb-1"></i>
+            <span class="text-[10px] font-medium">紀錄</span>
+        </button>
+        <button @click="currentTab = 'stats'" class="flex flex-col items-center p-2 transition-colors" :class="currentTab === 'stats' ? 'text-brand-600' : 'text-gray-400 hover:text-gray-600'">
+            <i class="fa-solid fa-chart-pie text-lg mb-1"></i>
+            <span class="text-[10px] font-medium">統計</span>
         </button>
         <button @click="currentTab = 'sync'" class="flex flex-col items-center p-2 transition-colors relative" :class="currentTab === 'sync' ? 'text-brand-600' : 'text-gray-400 hover:text-gray-600'">
-            <i class="fa-solid fa-satellite-dish text-xl mb-1"></i>
-            <span class="text-[10px] font-medium mt-1">通訊室</span>
+            <i class="fa-solid fa-satellite-dish text-lg mb-1"></i>
+            <span class="text-[10px] font-medium">通訊室</span>
             <span v-if="roomCode" class="absolute top-2 right-2 h-2 w-2 bg-green-500 rounded-full shadow-[0_0_5px_#22c55e]"></span>
         </button>
     </nav>
@@ -290,7 +493,7 @@
         </div>
     </div>
 
-    <!-- 新增對局彈窗 (附帶預設21分與加減按鈕) -->
+    <!-- 新增對局彈窗 -->
     <div v-if="showAddMatch" class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm z-50 flex justify-center items-end sm:items-center pb-0 sm:pb-0 overflow-hidden">
         <div class="bg-paper w-full h-[85vh] sm:h-auto sm:max-h-[90vh] sm:w-[90%] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col animate-slide-up">
             <div class="p-4 border-b border-gray-100 flex justify-between items-center bg-white rounded-t-3xl sm:rounded-t-3xl">
@@ -451,7 +654,23 @@
             const roomCode = ref(localStorage.getItem('b_roomCode') || '');
             const roomCodeInput = ref(roomCode.value);
             
-            // 安全解析 JSON，避免壞檔崩潰
+            // 取得目前今日、當月、當年的字串供預設使用
+            const todayStr = () => {
+                const d = new Date();
+                return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            };
+            const thisMonthStr = () => {
+                const d = new Date();
+                return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+            };
+
+            // ====== 📅 客製化時間維度選取狀態 ======
+            const statsTimeRange = ref('all'); // 'today' | 'month' | 'year' | 'all'
+            const selectedDate = ref(todayStr()); // 'YYYY-MM-DD'
+            const selectedMonth = ref(thisMonthStr()); // 'YYYY-MM'
+            const selectedYear = ref(new Date().getFullYear()); // YYYY
+
+            // 安全解析 JSON
             const safeParse = (key, defaultVal) => {
                 try {
                     const data = localStorage.getItem(key);
@@ -485,6 +704,16 @@
 
             // 啟動時加載當前房間資料
             loadDataForRoom(roomCode.value);
+
+            // 動態取得歷史對局中出現過的所有年份
+            const availableYears = computed(() => {
+                const years = new Set();
+                years.add(new Date().getFullYear()); // 預設一定有今年
+                matches.value.forEach(m => {
+                    years.add(new Date(m.timestamp).getFullYear());
+                });
+                return Array.from(years).sort((a,b) => b - a); // 降冪排列
+            });
 
             const saveLocal = () => {
                 if (!roomCode.value) return;
@@ -532,7 +761,7 @@
                 showDetailHistory.value = true;
             };
 
-            // ★ 修正對戰紀錄過濾機制，確保單打/雙打排名互不干擾，且雙打能正常獲取紀錄
+            // 對戰紀錄過濾機制
             const selectedPlayerMatches = computed(() => {
                 if (!selectedStat.value) return [];
                 const stat = selectedStat.value;
@@ -544,24 +773,21 @@
                     const isSingles = (tA.length === 1 && tB.length === 1);
 
                     if (stat.isCombo) {
-                        // 雙打組合篩選 (使用 + 切分 ID)
                         if (tA.length !== 2 && tB.length !== 2) return false;
                         const ids = stat.id.split('+');
                         const hasAllA = ids.every(id => tA.includes(id)) && tA.length === 2;
                         const hasAllB = ids.every(id => tB.includes(id)) && tB.length === 2;
                         return hasAllA || hasAllB;
                     } else {
-                        // 個人篩選
                         const hasPlayer = tA.includes(stat.id) || tB.includes(stat.id);
                         if (!hasPlayer) return false;
 
-                        // 根據當前選擇的排行版類型，限制呈現對應的賽果
                         if (currentType === 'singles') {
                             return isSingles;
                         } else if (currentType === 'doubles') {
                             return !isSingles;
                         }
-                        return true; // 總覽 tab 顯示全部
+                        return true; 
                     }
                 }).sort((a, b) => b.timestamp - a.timestamp);
             });
@@ -579,7 +805,6 @@
                 })).sort((a, b) => new Date(b.date) - new Date(a.date));
             });
 
-            // ★ 修正雙打戰績勝敗判讀：改以 + 號分割 ID
             const isMatchWon = (match) => {
                 if (!selectedStat.value) return false;
                 const stat = selectedStat.value;
@@ -628,7 +853,6 @@
                 })).sort((a, b) => new Date(b.date) - new Date(a.date));
             });
 
-            // ★ 雙打組合 ID 串接符號改為 + 號以修復 bug
             const filteredStats = computed(() => {
                 let stats = {};
 
@@ -646,7 +870,7 @@
                             if (team.length !== 2) return; 
                             
                             const sortedIds = [...team].sort();
-                            const comboKey = sortedIds.join('+'); // 核心修改：改為 + 號
+                            const comboKey = sortedIds.join('+'); 
                             
                             if (!stats[comboKey]) {
                                 const name1 = getPlayerName(sortedIds[0]);
@@ -708,6 +932,243 @@
                     });
             });
 
+            // ================= 📈 數據統計中心 核心計算邏輯 =================
+
+            // 1. 時間篩選對局紀錄（含使用者自訂日期/月份/年份過濾）
+            const timeFilteredMatches = computed(() => {
+                return matches.value.filter(m => {
+                    const matchDate = new Date(m.timestamp);
+                    
+                    if (statsTimeRange.value === 'today') {
+                        const formattedSelected = selectedDate.value.replace(/-/g, '/');
+                        return formatDateGroup(m.timestamp) === formattedSelected;
+                    }
+                    
+                    if (statsTimeRange.value === 'month') {
+                        const [year, month] = selectedMonth.value.split('-').map(Number);
+                        return matchDate.getFullYear() === year && (matchDate.getMonth() + 1) === month;
+                    }
+                    
+                    if (statsTimeRange.value === 'year') {
+                        return matchDate.getFullYear() === Number(selectedYear.value);
+                    }
+                    
+                    return true; // 'all' - 生涯全部
+                });
+            });
+
+            // 該時段有打球的「獨立打球天數」
+            const activeDaysCount = computed(() => {
+                const uniqueDays = new Set();
+                timeFilteredMatches.value.forEach(m => {
+                    uniqueDays.add(formatDateGroup(m.timestamp));
+                });
+                return uniqueDays.size;
+            });
+
+            // 圓餅圖：單雙打場數計數
+            const singlesCount = computed(() => {
+                return timeFilteredMatches.value.filter(m => (m.teamA || []).length === 1 && (m.teamB || []).length === 1).length;
+            });
+            const doublesCount = computed(() => {
+                return timeFilteredMatches.value.length - singlesCount.value;
+            });
+            const singlesPercent = computed(() => {
+                if (timeFilteredMatches.value.length === 0) return 0;
+                return Math.round((singlesCount.value / timeFilteredMatches.value.length) * 100);
+            });
+            const doublesPercent = computed(() => {
+                if (timeFilteredMatches.value.length === 0) return 0;
+                return Math.round((doublesCount.value / timeFilteredMatches.value.length) * 100);
+            });
+
+            // SVG圓餅圖周長 = 2 * PI * r ≒ 50.26
+            const singlesStrokeDash = computed(() => {
+                const total = 50.26;
+                const share = (singlesPercent.value / 100) * total;
+                return `${share} ${total}`;
+            });
+            const doublesStrokeDash = computed(() => {
+                const total = 50.26;
+                const share = (doublesPercent.value / 100) * total;
+                return `${share} ${total}`;
+            });
+
+            // SVG 趨勢折線圖數據源
+            const trendData = computed(() => {
+                if (timeFilteredMatches.value.length === 0) return [];
+                
+                // 按日期（月/日）分組統計打球場數
+                const dayCounts = {};
+                timeFilteredMatches.value.forEach(m => {
+                    const d = new Date(m.timestamp);
+                    const key = `${d.getMonth()+1}/${d.getDate()}`;
+                    dayCounts[key] = (dayCounts[key] || 0) + 1;
+                });
+
+                // 按時間戳排序日期
+                const sortedKeys = Object.keys(dayCounts).sort((a,b) => {
+                    const [mA, dA] = a.split('/').map(Number);
+                    const [mB, dB] = b.split('/').map(Number);
+                    return mA !== mB ? mA - mB : dA - dB;
+                });
+
+                return sortedKeys.map(k => ({
+                    label: k,
+                    count: dayCounts[k]
+                }));
+            });
+
+            const trendPoints = computed(() => {
+                const data = trendData.value;
+                if (data.length === 0) return [];
+                if (data.length === 1) return [{ x: 50, y: 15, label: data[0].label }];
+
+                const maxCount = Math.max(...data.map(d => d.count), 1);
+                
+                return data.map((d, index) => {
+                    const x = (index / (data.length - 1)) * 100;
+                    const y = 25 - ((d.count / maxCount) * 20); // 數量越高 y 值越低（SVG頂部為0）
+                    return { x, y, label: d.label };
+                });
+            });
+
+            const trendLinePath = computed(() => {
+                const pts = trendPoints.value;
+                if (pts.length === 0) return '';
+                let path = `M ${pts[0].x} ${pts[0].y}`;
+                for (let i = 1; i < pts.length; i++) {
+                    path += ` L ${pts[i].x} ${pts[i].y}`;
+                }
+                return path;
+            });
+
+            const trendLabels = computed(() => {
+                const data = trendData.value;
+                if (data.length === 0) return { start: '-', end: '-' };
+                return {
+                    start: data[0].label,
+                    end: data[data.length - 1].label
+                };
+            });
+
+            // ====== 🏆 核心改造：動態切換出席率或單日場次參與率 ======
+            const activeAttendanceStats = computed(() => {
+                const totalMatches = timeFilteredMatches.value.length;
+                const totalActiveDays = activeDaysCount.value;
+                
+                if (totalMatches === 0 || players.value.length === 0) return [];
+
+                // A. 如果是「單日」模式，以「當天總場數」為分母計算「場次參與率」
+                if (statsTimeRange.value === 'today') {
+                    return players.value.map(p => {
+                        const personalCount = timeFilteredMatches.value.filter(m => {
+                            return (m.teamA || []).includes(p.id) || (m.teamB || []).includes(p.id);
+                        }).length;
+
+                        return {
+                            id: p.id,
+                            name: p.name,
+                            rawCount: personalCount, // 用於尾部文字呈現
+                            rate: Math.round((personalCount / totalMatches) * 100)
+                        };
+                    }).sort((a,b) => b.rate - a.rate); // 由高到低
+                }
+
+                // B. 其他跨日模式，依舊以「總天數」為分母計算「天數出席率」
+                return players.value.map(p => {
+                    const personalActiveDays = new Set();
+                    timeFilteredMatches.value.forEach(m => {
+                        const hasPlayer = (m.teamA || []).includes(p.id) || (m.teamB || []).includes(p.id);
+                        if (hasPlayer) {
+                            personalActiveDays.add(formatDateGroup(m.timestamp));
+                        }
+                    });
+
+                    const personalDaysCount = personalActiveDays.size;
+
+                    return {
+                        id: p.id,
+                        name: p.name,
+                        rawCount: personalDaysCount, // 用於尾部文字呈現
+                        rate: Math.round((personalDaysCount / totalActiveDays) * 100)
+                    };
+                }).sort((a,b) => b.rate - a.rate); // 由高到低
+            });
+
+            // 3. 走勢與成就徽章計算
+            const formAndAchievements = computed(() => {
+                return players.value.map(p => {
+                    // 抓出近五場有參與的對戰 (由新到舊)
+                    const personalMatches = matches.value.filter(m => {
+                        return (m.teamA || []).includes(p.id) || (m.teamB || []).includes(p.id);
+                    }).sort((a,b) => b.timestamp - a.timestamp).slice(0, 5);
+
+                    const recentForm = personalMatches.map(m => {
+                        const sA = Number(m.scoreA);
+                        const sB = Number(m.scoreB);
+                        const winA = sA > sB;
+                        if ((m.teamA || []).includes(p.id)) return winA ? 'W' : 'L';
+                        return winA ? 'L' : 'W';
+                    }).reverse(); // 舊 -> 新
+
+                    // 成就系統判斷
+                    let badges = [];
+                    const totalPlayerMatches = matches.value.filter(m => (m.teamA || []).includes(p.id) || (m.teamB || []).includes(p.id));
+                    
+                    let wins = 0;
+                    totalPlayerMatches.forEach(m => {
+                        const sA = Number(m.scoreA);
+                        const sB = Number(m.scoreB);
+                        const isTeamA = (m.teamA || []).includes(p.id);
+                        if ((sA > sB && isTeamA) || (sB > sA && !isTeamA)) wins++;
+                    });
+                    const winRate = totalPlayerMatches.length > 0 ? (wins / totalPlayerMatches.length) : 0;
+
+                    let currentStreak = 0;
+                    let maxStreak = 0;
+                    const allForm = totalPlayerMatches.sort((a,b) => a.timestamp - b.timestamp).map(m => {
+                        const sA = Number(m.scoreA);
+                        const sB = Number(m.scoreB);
+                        const isTeamA = (m.teamA || []).includes(p.id);
+                        return ((sA > sB && isTeamA) || (sB > sA && !isTeamA)) ? 'W' : 'L';
+                    });
+
+                    allForm.forEach(f => {
+                        if (f === 'W') {
+                            currentStreak++;
+                            if (currentStreak > maxStreak) maxStreak = currentStreak;
+                        } else {
+                            currentStreak = 0;
+                        }
+                    });
+
+                    // 徽章解鎖邏輯
+                    if (totalPlayerMatches.length >= 10) {
+                        badges.push({ text: '元老級人物', icon: 'fa-solid fa-crown', color: 'bg-yellow-50 border-yellow-200 text-yellow-700' });
+                    }
+                    if (winRate >= 0.7 && totalPlayerMatches.length >= 5) {
+                        badges.push({ text: '常勝將軍', icon: 'fa-solid fa-fire text-red-500', color: 'bg-red-50 border-red-100 text-red-700' });
+                    }
+                    if (maxStreak >= 3) {
+                        badges.push({ text: `${maxStreak}連勝中`, icon: 'fa-solid fa-bolt text-amber-500', color: 'bg-amber-50 border-amber-100 text-amber-700' });
+                    }
+                    if (totalPlayerMatches.length > 0 && winRate <= 0.3) {
+                        badges.push({ text: '敗部復活中', icon: 'fa-solid fa-heart text-blue-500', color: 'bg-blue-50 border-blue-100 text-blue-700' });
+                    }
+                    if (badges.length === 0) {
+                        badges.push({ text: '潛力新星', icon: 'fa-solid fa-star text-brand-500', color: 'bg-brand-50 border-brand-100 text-brand-600' });
+                    }
+
+                    return {
+                        id: p.id,
+                        name: p.name,
+                        recentForm,
+                        badges
+                    };
+                });
+            });
+
             // ================= MQTT 全自動同步機制 =================
             const initMQTT = () => {
                 if (typeof mqtt === 'undefined') {
@@ -722,6 +1183,8 @@
 
                     mqttClient.on('connect', () => {
                         isConnected.value = true;
+                        
+                        // 訂閱自己的房間
                         if(roomCode.value) {
                             syncStatus.value = '全自動同步中';
                             subscribeRoom();
@@ -929,6 +1392,8 @@
                 roomCode, roomCodeInput, players, matches, syncStatus, isSyncing,
                 newPlayerName, matchForm, connectionColor, connectionIcon, autoSync,
                 leaderboardType, filteredStats, groupedMatches,
+                statsTimeRange, selectedDate, selectedMonth, selectedYear, availableYears,
+                timeFilteredMatches, activeDaysCount, singlesCount, doublesCount, singlesPercent, doublesPercent, singlesStrokeDash, doublesStrokeDash, trendPoints, trendLinePath, trendLabels, activeAttendanceStats, formAndAchievements,
                 formatTime, getPlayerName, adjustScore,
                 addPlayer, updatePlayerName, deletePlayer, addMatch, joinRoom, generateRoomCode, requestSync, broadcastData, saveSettings
             };
@@ -937,3 +1402,5 @@
 </script>
 </body>
 </html>
+
+```
